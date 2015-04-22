@@ -21,7 +21,7 @@ using Distributions
 	return DB
 end
 
-@debug function compute_gradU( name_indices, q, q_len)
+@debug function compute_gradU_exact( name_indices, q, q_len)
 	for name in collect(keys(name_indices))
 		indxs = name_indices[name]
 		params.CURRENT_TRACE = set_chobject(params.CURRENT_TRACE, name, q[indxs], length(indxs))
@@ -55,6 +55,56 @@ end
 	return final_gradient
 end
 
+
+@debug function compute_gradU_SPSA( name_indices, q, q_len)
+	num_samples = 5
+	stepsize = 1e-9
+
+	grad_q = zeros(length(q))
+
+	cur_name = ""
+	for name in collect(keys(name_indices))	#clean later. only does first element anyways
+		cur_name = name
+	end
+	for i = 1:num_samples
+		
+		delta = 2*rand(Bernoulli(0.5),(1,length(q)))-1
+		delta = delta[:]
+		
+		q_plus = q + delta; q_minus = q - delta
+
+		delta_step = 2*stepsize*delta 
+
+		#energy for q_plus
+		params.CURRENT_TRACE["RC"][cur_name]["X"] = q_plus
+		trace_update(params.TAST)	
+		score_q_plus = params.CURRENT_TRACE["ll"]
+
+		#energy for q_plus
+		params.CURRENT_TRACE["RC"][cur_name]["X"] = q_minus
+		trace_update(params.TAST)	
+		score_q_minus = params.CURRENT_TRACE["ll"]
+
+		grad_q = grad_q + ((score_q_plus-score_q_minus)./delta_step)
+	end
+	
+	grad_q = grad_q	./ num_samples
+
+	params.CURRENT_TRACE["RC"][cur_name]["X"] = q
+	trace_update(params.TAST)
+
+	return grad_q
+end
+
+
+function compute_gradU(name_indices, q, q_len, EXACT)
+	if EXACT
+		return compute_gradU_exact(name_indices, q,q_len)
+	else
+		return compute_gradU_SPSA(name_indices, q,q_len)
+	end
+end
+
 function isBounded(erp,theta)
 	if erp == Uniform
 		return true, theta[1], theta[2]
@@ -65,6 +115,8 @@ function isBounded(erp,theta)
 end
 
 @debug function hmc_propose(names, debug_callback)
+	
+	EXACT = true
 
 	params.CURRENT_TRACE = deepcopy(params.TRACE)
 	# trace_update(params.TAST)
@@ -73,14 +125,16 @@ end
 	LEAP_FROG = rand(DiscreteUniform(5,10)) #10-20
 
 	q_len = 0
-	for name in names
-		tmp = np.shape(params.CURRENT_TRACE["RC"][name]["ch_object"])
-		if tmp == (1,)
-			tmp = 1
-		else
-			tmp = tmp[1]
+	if EXACT #for the time being. testing SPSA	
+		for name in names
+			tmp = np.shape(params.CURRENT_TRACE["RC"][name]["ch_object"])
+			if tmp == (1,)
+				tmp = 1
+			else
+				tmp = tmp[1]
+			end
+			q_len += tmp
 		end
-		q_len += tmp
 	end
 
 	current_q = 0
@@ -100,7 +154,7 @@ end
 	end
 
 	q = deepcopy(current_q)
-	p = rand(Normal(0,1,),1,length(q))[:]
+	p = rand(Normal(0,1),(1,length(q)))[:]
 	current_p = deepcopy(p)
 
 	# ########### DEBUG ############
@@ -117,11 +171,12 @@ end
 
 	#Make half step for momentum at the beginning
 
-	p = p - epsilon * compute_gradU(name_indices, q, q_len)
+	p = p - epsilon * compute_gradU(name_indices, q, q_len,EXACT)
 
 
 	#Alternate full steps for position and momentum
 	for i = 1:LEAP_FROG
+		print("leap:#",i)
 		q = q + epsilon * p
 
 		for name in names
@@ -147,21 +202,25 @@ end
 
 		#Make full step for the momentum, except at the end of trajectory
 		if i != LEAP_FROG
-			p = p - epsilon*compute_gradU(name_indices, q, q_len)
+			p = p - epsilon*compute_gradU(name_indices, q, q_len,EXACT)
 		end
 	end
 
 	#Make a half step for momentum at the end
-	p = p - epsilon*compute_gradU(name_indices,q, q_len)*0.5
+	p = p - epsilon*compute_gradU(name_indices,q, q_len,EXACT)*0.5
 	p = -p 
 
 	#Evaluate potential and kinect energy
 	#DB = set_chobject(DB, name, current_q, q_len)
 	#params.CURRENT_TRACE = deepcopy(DB)
-	for name in names
-		indxs = name_indices[name]
-		params.CURRENT_TRACE = set_chobject(params.CURRENT_TRACE, name, current_q[indxs], length(indxs))
+	
+	if EXACT #for the time being. testing SPSA	
+		for name in names
+			indxs = name_indices[name]
+			params.CURRENT_TRACE = set_chobject(params.CURRENT_TRACE, name, current_q[indxs], length(indxs))
+		end
 	end
+
 	trace_update(params.TAST)
 	# CUR_TRACE = deepcopy(params.CURRENT_TRACE)
 	current_U = -params.CURRENT_TRACE["ll"]
@@ -171,10 +230,13 @@ end
 
 	#DB = set_chobject(DB, name, q, q_len)
 	#params.CURRENT_TRACE = deepcopy(DB)
-	for name in names
-		indxs = name_indices[name]
-		params.CURRENT_TRACE = set_chobject(params.CURRENT_TRACE, name,  q[indxs], length(indxs))
+	if EXACT #for the time being. testing SPSA	
+		for name in names
+			indxs = name_indices[name]
+			params.CURRENT_TRACE = set_chobject(params.CURRENT_TRACE, name,  q[indxs], length(indxs))
+		end
 	end
+
 	trace_update(params.TAST)
 	# NEW_TRACE = deepcopy(params.CURRENT_TRACE)
 	proposed_U = -params.CURRENT_TRACE["ll"]; ll_fresh = params.CURRENT_TRACE["ll_fresh"]; ll_stale = params.CURRENT_TRACE["ll_stale"]
@@ -189,19 +251,25 @@ end
 	if rand() < exp(current_U - proposed_U + current_K - proposed_K + log(old_rc_cnt) - log(new_rc_cnt) + ll_stale - ll_fresh)
 		#accept
 		#DB = deepcopy(NEW_TRACE)
-		for name in names
-			indxs = name_indices[name]
-			params.CURRENT_TRACE = set_chobject(params.CURRENT_TRACE, name, q[indxs], length(indxs))
+
+		if EXACT #for the time being. testing SPSA	
+			for name in names
+				indxs = name_indices[name]
+				params.CURRENT_TRACE = set_chobject(params.CURRENT_TRACE, name, q[indxs], length(indxs))
+			end
 		end
+
 		trace_update(params.TAST)
 		debug_callback(params.CURRENT_TRACE)
 		println("ACCEPT")
 		# return NEW_TRACE
 		return params.CURRENT_TRACE#deepcopy(params.CURRENT_TRACE)
 	else
-		for name in names
-			indxs = name_indices[name]
-			params.CURRENT_TRACE = set_chobject(params.CURRENT_TRACE, name, current_q[indxs], length(indxs))
+		if EXACT #for the time being. testing SPSA	
+			for name in names
+				indxs = name_indices[name]
+				params.CURRENT_TRACE = set_chobject(params.CURRENT_TRACE, name, current_q[indxs], length(indxs))
+			end
 		end
 		trace_update(params.TAST)
 		println("REJECTED")

@@ -53,6 +53,11 @@ end
 	# catch
 	# 	@bp
 	# end
+
+	#plt.imshow(params.USER_DEFINED["ren"])
+	#plt.pause(0.0001)
+	#plt.show(block=true)
+
 	return params.USER_DEFINED["ren"]                  	
 end
 
@@ -140,7 +145,7 @@ for repeat = 1:10
 
 	mhonly = true
 
-	base_dir = string("earth_dump/mh=",mhonly,"_",time(),"/")
+	base_dir = string("samples/mh=",mhonly,"_",time(),"/")
 	mkdir(base_dir)
 
 	load_program(PROGRAM)
@@ -169,7 +174,7 @@ for repeat = 1:10
 			infer(debug_callback,1, ["G1","A1"], "LBFGS", ["res"=>[1,7]])
 		end
 	else
-		if mhonly == true
+		if mhonly == false
 			GRADIENT_CALC = true
 			for ii=1:20
 				infer(debug_callback,5, ["G1"], "MH_SingleSite")
@@ -183,7 +188,7 @@ for repeat = 1:10
 				infer(debug_callback,5, ["G1"], "MH_SingleSite")
 				infer(debug_callback,5, ["A1"], "MH_SingleSite")
 				if ii > 10
-					infer(debug_callback,1, ["G1","A1"], "HMC")
+					 infer(debug_callback,1, ["G1","A1"], "HMC")
 				end
 			end
 		end
