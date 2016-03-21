@@ -28,7 +28,10 @@ function ELLIPTICAL(names, debug_callback)
     phi_min = phi - 2*pi;
     phi_max = phi;
 
-   	
+    ERP = params.CURRENT_TRACE["RC"][names[1]]["ERP"]
+    theta_c = {0,1} #hack -- should be passed in
+	ERP_OBJ = ERP_CREATE(ERP, theta_c)
+
 	#Slice sampling loop
 	while true
 	    # Compute xx for proposed angle difference and check if it's on the slice
@@ -42,6 +45,9 @@ function ELLIPTICAL(names, debug_callback)
 	    if cur_log_like > hh
 	    	#New point is on slice, ** EXIT LOOP **
 	    	# print("cur:", cur_log_like, "	hh:", hh, "\n")
+    		logl = logscore_erp(ERP_OBJ,params.CURRENT_TRACE["RC"][names[1]]["X"], theta_c) 
+			params.CURRENT_TRACE["RC"][names[1]]["logl"] = logl
+			
 	        params.TRACE = deepcopy(params.CURRENT_TRACE)
 	        debug_callback(params.CURRENT_TRACE)
 	        return params.CURRENT_TRACE
@@ -58,7 +64,6 @@ function ELLIPTICAL(names, debug_callback)
 	    #Propose new angle difference
 	    phi = rand()*(phi_max - phi_min) + phi_min;
 	end
-
 end
 
 
